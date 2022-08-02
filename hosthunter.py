@@ -74,8 +74,10 @@ socket.setdefaulttimeout(3)
 
 # Argument Parser
 parser = argparse.ArgumentParser(
-    description='[?] HostHunter ' + __version__ + ' - Help Page',
-    epilog="Author: " + __author__)
+    description=f'[?] HostHunter {__version__} - Help Page',
+    epilog=f"Author: {__author__}",
+)
+
 parser.add_argument(
     "-f",
     "--format",
@@ -115,7 +117,7 @@ def init_checks(args):
         print("Example Usage: python3 hosthunter.py -t 8.8.8.8 -o vhosts.csv")
         exit()
 
-    if args.format.lower() != "txt" and args.format.lower() != "csv":
+    if args.format.lower() not in ["txt", "csv"]:
         print("\n [*] Error: File output format not supported. Choose between 'txt' or 'csv' .\n")
         print("Example Usage: python3 hosthunter.py targets.txt -f txt ")
         exit()
@@ -137,21 +139,16 @@ def init_checks(args):
 
     if os.path.exists(args.output):
         print(
-            "\n[?] {} file already exists, would you like to overwrite it?".format(
-                args.output))
+            f"\n[?] {args.output} file already exists, would you like to overwrite it?"
+        )
+
         answer = input("Answer with [Y]es or [N]o : ").lower()
-        if (answer == 'yes' or answer == 'y'):
-            pass
-        else:
+        if answer not in ['yes', 'y']:
             exit()
 
 
 def read_targets():
-    if args.target:
-        targets = []
-        targets.append(args.target)
-    else:
-        targets = open(args.targets, "rt")  # Read File
+    targets = [args.target] if args.target else open(args.targets, "rt")
     return targets
 
 
@@ -169,7 +166,7 @@ def display_banner():
         __version__ +
         "\n")
 
-    print("%s" % banner)
+    print(f"{banner}")
     print("\n", "HostHunter: ", __version__)
     print(" Author : ", __author__)
     print("\n" + "|" + "-" * 95 + "|", end="\n")
@@ -185,13 +182,12 @@ class target:
 
 # Nessus Function  - Generates IP/Hostname pairs in Nessus tool format.
 def nessus(hostx):
-    nessus = open("nessus_"+args.output, 'a')
-    for host in hostx.hname:
-        row = host + "[" + hostx.address + "], "
-        nessus.write(row)
-    if not hostx.hname:
-        nessus.write(hostx.address)
-    nessus.close()
+    with open(f"nessus_{args.output}", 'a') as nessus:
+        for host in hostx.hname:
+            row = f"{host}[{hostx.address}], "
+            nessus.write(row)
+        if not hostx.hname:
+            nessus.write(hostx.address)
     return 0
 
 
@@ -199,14 +195,10 @@ def nessus(hostx):
 def take_screenshot(wpath, port):
     sleep(0.5)  # Delay
 
-    if port == "80":
-        url = "http://" + wpath
-    else:
-        url = "https://" + wpath + ":" + port
-
+    url = f"http://{wpath}" if port == "80" else f"https://{wpath}:{port}"
     try:
         driver.get(url)
-        driver.save_screenshot(sc_path + "/" + wpath + "_" + port + ".png")
+        driver.save_screenshot(f"{sc_path}/{wpath}_{port}.png")
     except (urllib3.exceptions.ReadTimeoutError, requests.ConnectionError,
             urllib3.connection.ConnectionError,
             urllib3.exceptions.MaxRetryError,
@@ -221,17 +213,17 @@ def take_screenshot(wpath, port):
 
 # Validate Input Targets - Needs to be Replaced
 def validate(targ):
-    if not bool(re.match(pattern_v4, targ.address)):
-        if bool(re.match(pattern_v6, targ.address)):
-            targ.ipv6 = True
-        else:
-            print(
-                "\n\"",
-                targ.address,
-                "\" is not a valid IPv4 or IPv6 address.")
-            return False
-    else:
+    if bool(re.match(pattern_v4, targ.address)):
         True
+
+    elif bool(re.match(pattern_v6, targ.address)):
+        targ.ipv6 = True
+    else:
+        print(
+            "\n\"",
+            targ.address,
+            "\" is not a valid IPv4 or IPv6 address.")
+        return False
 
 
 # sslGrabber Function
@@ -243,19 +235,15 @@ def sslGrabber(hostx, port):
         cert_hostname = x509.get_subject().CN
         # Get SAN
         alt_names = []
-        for i in range(0, x509.get_extension_count()):
+        for i in range(x509.get_extension_count()):
             ext = x509.get_extension(i)
             if "subjectAltName" in str(ext.get_short_name()):
                 content = ext.__str__()
-                for alt_name in content.split(","):
-                    alt_names.append(alt_name.strip()[4:])
-
+                alt_names.extend(alt_name.strip()[4:] for alt_name in content.split(","))
         # Add New HostNames to List
         if cert_hostname:
             for host in cert_hostname.split('\n'):
-                if (host == "") or (host in hostx.hname):
-                    pass
-                else:
+                if host != "" and host not in hostx.hname:
                     try:
                         host = host.replace('*.', '')
                     finally:
@@ -273,9 +261,13 @@ def sslGrabber(hostx, port):
 # analyze_header Function
 def analyze_header(header, hostx):
     try:
-        r2 = requests.get("http://" + hostx.address,
-                          allow_redirects=False,
-                          headers=custom_headers, timeout=5).text
+        r2 = requests.get(
+            f"http://{hostx.address}",
+            allow_redirects=False,
+            headers=custom_headers,
+            timeout=5,
+        ).text
+
         r2.close()
         if (r2.status_code in range(300, 400)):
             try:
@@ -300,13 +292,8 @@ def queryAPI(url, hostx):
                     1 and r2.find("error") == -
                     1):
             for host in r2.split('\n'):
-                if (host == "") or (host in hostx.hname):
-                    pass
-                else:
+                if host != "" and host not in hostx.hname:
                     hostx.hname.append(host)
-        # Add API count exceed detection
-        else:
-            pass
     except (requests.exceptions.ConnectionError,
             urllib3.connection.ConnectionError,
             urllib3.exceptions.ConnectTimeoutError,
@@ -439,11 +426,17 @@ def main(argc, targets):
     print("\n" + "|" + "-" * 95 + "|", end="\n\n")
     print("  Reconnaissance Completed!", end="\n\n")
     if counter == 0:
-        print("  0 hostname was discovered in %s sec" %
-              (round(time() - start_time, 2)), end="\n\n")
+        print(
+            f"  0 hostname was discovered in {round(time() - start_time, 2)} sec",
+            end="\n\n",
+        )
+
     else:
-        print("  %s hostnames were discovered in %s sec" %
-              (counter, round(time() - start_time, 2)), end="\n\n")
+        print(
+            f"  {counter} hostnames were discovered in {round(time() - start_time, 2)} sec",
+            end="\n\n",
+        )
+
     print("|" + "-" * 95 + "|")
 # End of Main Function
 
@@ -457,7 +450,7 @@ if __name__ == "__main__":
     targets = read_targets()
     DRIVER = check_os(DRIVER)
     # Files
-    appsf = open("webapps_"+args.output, "wt")  # Write File
+    appsf = open(f"webapps_{args.output}", "wt")
     vhostsf = open(args.output, "wt")
 
     if args.format.lower() == "csv":
@@ -481,7 +474,7 @@ if __name__ == "__main__":
         driver.set_page_load_timeout(12)
         if not os.path.exists(sc_path):
             os.makedirs(sc_path)
-        print("    Screenshots saved at: ", os.getcwd() + "/" + sc_path)
+        print("    Screenshots saved at: ", f"{os.getcwd()}/{sc_path}")
         print("|" + "-" * 95 + "|", end="\n\n")
 
     main(sys.argv, targets)  # Main Function
